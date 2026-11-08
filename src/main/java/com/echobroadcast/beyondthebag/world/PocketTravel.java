@@ -41,7 +41,10 @@ public final class PocketTravel {
             player.getPersistentData().put(TAG, playerData);
         }
         player.teleportTo(pocket, x + 0.5, 102, z + 0.5, player.getYRot(), player.getXRot());
-        player.getPersistentData().getCompound(TAG).putBoolean("inside", true);
+        CompoundTag homeData = player.getPersistentData().getCompound(TAG);
+        homeData.putBoolean("inside", true);
+        homeData.putBoolean("in_maze", false);
+        player.getPersistentData().put(TAG, homeData);
         player.sendSystemMessage(Component.literal("Мешок раскрывается. Это твоё личное пространство. Постройки сохраняются."));
     }
 
@@ -55,7 +58,13 @@ public final class PocketTravel {
         int z = base + 180;
         generateFreshMaze(pocket, x, z, player.getUUID().getMostSignificantBits() ^ player.getUUID().getLeastSignificantBits() ^ player.level().getGameTime());
         player.teleportTo(pocket, x + 0.5, 82, z + 0.5, player.getYRot(), player.getXRot());
-        player.getPersistentData().getCompound(TAG).putBoolean("inside", true);
+        CompoundTag expedition = player.getPersistentData().getCompound(TAG);
+        expedition.putBoolean("inside", true);
+        expedition.putBoolean("in_maze", true);
+        expedition.putInt("maze_ticks", 0);
+        expedition.putInt("maze_event_cooldown", 200);
+        expedition.putBoolean("maze_boss_spawned", false);
+        player.getPersistentData().put(TAG, expedition);
         player.sendSystemMessage(Component.literal("Нестабильное измерение сформировалось заново. Не задерживайся."));
     }
 
@@ -103,6 +112,7 @@ public final class PocketTravel {
         }
         player.teleportTo(destination, x, y, z, yaw, pitch);
         data.putBoolean("inside", false);
+        data.putBoolean("in_maze", false);
         player.getPersistentData().put(TAG, data);
         player.sendSystemMessage(Component.literal("Мешок схлопывается. Ты вернулся туда, откуда вошёл."));
     }

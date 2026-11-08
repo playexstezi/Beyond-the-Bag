@@ -15,7 +15,8 @@ public class BagActionPacket {
     public static void handle(BagActionPacket packet, Supplier<NetworkEvent.Context> contextSupplier) {
         NetworkEvent.Context context = contextSupplier.get();
         context.enqueueWork(() -> {
-            if (context.getSender() instanceof ServerPlayer player) {
+            ServerPlayer player = context.getSender();
+            if (player != null) {
                 switch (packet.action) {
                     case 0 -> PocketTravel.enterHome(player);
                     case 1 -> PocketTravel.enterMaze(player);
