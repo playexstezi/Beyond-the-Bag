@@ -1,3 +1,8 @@
 {
-  "item.beyondthebag.dimension_bag": "Dimension Bag"
+  "item.beyondthebag.dimension_bag": "Dimensional Bag",
+  "screen.beyondthebag.title": "Dimensional Bag",
+  "screen.beyondthebag.subtitle": "Choose where to open the passage",
+  "screen.beyondthebag.home": "Personal Dimension",
+  "screen.beyondthebag.maze": "Unstable Dimension",
+  "screen.beyondthebag.return": "Return from dimension"
 }

@@ -1,3 +1,8 @@
 {
-  "item.beyondthebag.dimension_bag": "Мешок измерений"
+  "item.beyondthebag.dimension_bag": "Мешок измерений",
+  "screen.beyondthebag.title": "Мешок измерений",
+  "screen.beyondthebag.subtitle": "Выбери, куда открыть проход",
+  "screen.beyondthebag.home": "Личное измерение",
+  "screen.beyondthebag.maze": "Нестабильное измерение",
+  "screen.beyondthebag.return": "Вернуться из измерения"
 }

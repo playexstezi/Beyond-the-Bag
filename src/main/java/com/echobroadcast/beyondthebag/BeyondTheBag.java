@@ -1,6 +1,7 @@
 package com.echobroadcast.beyondthebag;
 
 import com.echobroadcast.beyondthebag.item.ModItems;
+import com.echobroadcast.beyondthebag.network.BagNetwork;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.event.BuildCreativeModeTabContentsEvent;
 import net.minecraft.world.item.CreativeModeTabs;
@@ -14,6 +15,7 @@ public class BeyondTheBag {
     public BeyondTheBag() {
         IEventBus modBus = FMLJavaModLoadingContext.get().getModEventBus();
         ModItems.ITEMS.register(modBus);
+        BagNetwork.register();
         modBus.addListener(this::addCreativeTabItems);
     }
 

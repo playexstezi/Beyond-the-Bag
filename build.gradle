@@ -6,7 +6,7 @@ plugins {
 }
 
 group = 'com.echobroadcast'
-version = '0.2.0-alpha'
+version = '1.0.0-dev'
 base { archivesName = 'beyondthebag' }
 
 java.toolchain.languageVersion = JavaLanguageVersion.of(17)
@@ -34,9 +34,21 @@ dependencies {
 
 processResources {
     def replaceProperties = [mod_id: 'beyondthebag', mod_name: 'Beyond the Bag', mod_version: project.version,
-                             mod_authors: 'EchoBroadcast', mod_description: 'A bag containing private pocket spaces.']
+                             mod_authors: 'EchoBroadcast', mod_description: 'A mysterious bag containing persistent pocket spaces and unstable expeditions.']
     inputs.properties replaceProperties
     filesMatching(['META-INF/mods.toml', 'pack.mcmeta']) { expand replaceProperties }
 }
 
+jar {
+    manifest {
+        attributes([
+                'Specification-Title': 'beyondthebag',
+                'Specification-Vendor': 'EchoBroadcast',
+                'Specification-Version': '1',
+                'Implementation-Title': project.name,
+                'Implementation-Version': project.jar.archiveVersion,
+                'Implementation-Vendor': 'EchoBroadcast'
+        ])
+    }
+}
 jar.finalizedBy('reobfJar')

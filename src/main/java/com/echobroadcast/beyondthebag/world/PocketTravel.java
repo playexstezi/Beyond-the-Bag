@@ -17,20 +17,12 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.network.chat.Component;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
 import java.util.Random;
 
-/** Server-authoritative travel and generation for the two pocket-space regions. */
 public final class PocketTravel {
     private static final ResourceKey<Level> POCKET_KEY = ResourceKey.create(Registries.DIMENSION,
             new ResourceLocation(BeyondTheBag.MODID, "pocket"));
     private static final String TAG = "BeyondTheBag";
-    private static final int HOME_Y = 100;
-    private static final int MAZE_FLOOR_Y = 79;
-    private static final int CELL_SIZE = 6;
-    private static final int GRID = 7;
 
     private PocketTravel() {}
 
@@ -38,13 +30,19 @@ public final class PocketTravel {
         if (isInside(player)) { returnHome(player); return; }
         saveReturnPoint(player);
         ServerLevel pocket = getPocket(player);
-        if (pocket == null) { player.sendSystemMessage(Component.literal("[Beyond the Bag] Карманное измерение не загрузилось.")); return; }
-        int[] region = region(player);
-        int x = region[0], z = region[1];
-        makeHomeLanding(pocket, x, z);
-        player.teleportTo(pocket, x + 0.5, HOME_Y + 1.0, z + 0.5, player.getYRot(), player.getXRot());
-        markInside(player, "home");
-        player.sendSystemMessage(Component.literal("Личное пространство открыто. Постройки сохраняются между посещениями."));
+        if (pocket == null) { player.sendSystemMessage(Component.literal("[Beyond the Bag] Карманное измерение не загрузилось. Проверь установку мода.")); return; }
+        int base = region(player);
+        int x = base;
+        int z = base;
+        CompoundTag playerData = player.getPersistentData().getCompound(TAG);
+        if (!playerData.getBoolean("home_generated")) {
+            makeHomeLanding(pocket, x, z, player.getUUID().getLeastSignificantBits());
+            playerData.putBoolean("home_generated", true);
+            player.getPersistentData().put(TAG, playerData);
+        }
+        player.teleportTo(pocket, x + 0.5, 102, z + 0.5, player.getYRot(), player.getXRot());
+        player.getPersistentData().getCompound(TAG).putBoolean("inside", true);
+        player.sendSystemMessage(Component.literal("Мешок раскрывается. Это твоё личное пространство. Постройки сохраняются."));
     }
 
     public static void enterMaze(ServerPlayer player) {
@@ -52,21 +50,13 @@ public final class PocketTravel {
         saveReturnPoint(player);
         ServerLevel pocket = getPocket(player);
         if (pocket == null) { player.sendSystemMessage(Component.literal("[Beyond the Bag] Карманное измерение не загрузилось.")); return; }
-        int[] region = region(player);
-        int x = region[0] + 256, z = region[1] + 256;
-        long seed = player.getUUID().getMostSignificantBits() ^ player.getUUID().getLeastSignificantBits()
-                ^ player.level().getGameTime() ^ player.getRandom().nextLong();
-        generateFreshMaze(pocket, x, z, seed);
-        player.teleportTo(pocket, x + 0.5, MAZE_FLOOR_Y + 1.0, z + 0.5, player.getYRot(), player.getXRot());
-        markInside(player, "maze");
-        player.sendSystemMessage(Component.literal("Нестабильное пространство перестроилось. Найди добычу и возвращайся мешком."));
-    }
-
-    private static void markInside(ServerPlayer player, String space) {
-        CompoundTag data = player.getPersistentData().getCompound(TAG);
-        data.putBoolean("inside", true);
-        data.putString("space", space);
-        player.getPersistentData().put(TAG, data);
+        int base = region(player);
+        int x = base + 180;
+        int z = base + 180;
+        generateFreshMaze(pocket, x, z, player.getUUID().getMostSignificantBits() ^ player.getUUID().getLeastSignificantBits() ^ player.level().getGameTime());
+        player.teleportTo(pocket, x + 0.5, 82, z + 0.5, player.getYRot(), player.getXRot());
+        player.getPersistentData().getCompound(TAG).putBoolean("inside", true);
+        player.sendSystemMessage(Component.literal("Нестабильное измерение сформировалось заново. Не задерживайся."));
     }
 
     private static void saveReturnPoint(ServerPlayer player) {
@@ -81,116 +71,142 @@ public final class PocketTravel {
         return player.level().dimension().equals(POCKET_KEY) && player.getPersistentData().getCompound(TAG).getBoolean("inside");
     }
 
+    public static void leavePocket(ServerPlayer player) {
+        if (player.level().dimension().equals(POCKET_KEY)) returnHome(player);
+        else player.sendSystemMessage(Component.literal("Ты сейчас не находишься внутри мешка."));
+    }
+
     private static void returnHome(ServerPlayer player) {
         CompoundTag data = player.getPersistentData().getCompound(TAG);
         MinecraftServer server = player.getServer();
         ResourceLocation id = ResourceLocation.tryParse(data.getString("return_dimension"));
         ServerLevel destination = id == null ? null : server.getLevel(ResourceKey.create(Registries.DIMENSION, id));
-        double x = data.getDouble("return_x"), y = data.getDouble("return_y"), z = data.getDouble("return_z");
-        float yaw = data.getFloat("return_yaw"), pitch = data.getFloat("return_pitch");
+        double x = data.getDouble("return_x");
+        double y = data.getDouble("return_y");
+        double z = data.getDouble("return_z");
+        float yaw = data.getFloat("return_yaw");
+        float pitch = data.getFloat("return_pitch");
+
+        // Missing or unavailable return data must never send the player to an unsafe origin.
         if (destination == null || !data.contains("return_x") || !data.contains("return_y") || !data.contains("return_z")) {
             destination = server.getLevel(Level.OVERWORLD);
-            if (destination == null) { player.sendSystemMessage(Component.literal("Не удалось найти безопасную точку возвращения.")); return; }
+            if (destination == null) {
+                player.sendSystemMessage(Component.literal("Не удалось найти безопасную точку возвращения."));
+                return;
+            }
             BlockPos spawn = destination.getSharedSpawnPos();
-            x = spawn.getX() + 0.5; y = spawn.getY() + 1.0; z = spawn.getZ() + 0.5; yaw = 0; pitch = 0;
+            x = spawn.getX() + 0.5;
+            y = spawn.getY() + 1.0;
+            z = spawn.getZ() + 0.5;
+            yaw = 0.0F;
+            pitch = 0.0F;
         }
         player.teleportTo(destination, x, y, z, yaw, pitch);
         data.putBoolean("inside", false);
-        data.remove("space");
         player.getPersistentData().put(TAG, data);
-        player.sendSystemMessage(Component.literal("Ты вернулся в точку входа."));
+        player.sendSystemMessage(Component.literal("Мешок схлопывается. Ты вернулся туда, откуда вошёл."));
     }
 
     private static ServerLevel getPocket(ServerPlayer player) { return player.getServer().getLevel(POCKET_KEY); }
 
-    /* A deterministic, widely spaced region per UUID. Home and maze are separate footprints. */
-    private static int[] region(ServerPlayer player) {
-        long a = player.getUUID().getMostSignificantBits();
-        long b = player.getUUID().getLeastSignificantBits();
-        int x = (int) Math.floorMod(a ^ (b >>> 17), 40_000L) * 512 - 10_240_000;
-        int z = (int) Math.floorMod(b ^ (a >>> 19), 40_000L) * 512 - 10_240_000;
-        return new int[]{x, z};
+    private static int region(ServerPlayer player) {
+        int slot = Math.floorMod(player.getUUID().hashCode(), 10000);
+        return (slot - 5000) * 512;
     }
 
-    private static void makeHomeLanding(ServerLevel level, int x, int z) {
-        // Clear only the personal landing volume; never touch the maze footprint.
-        for (int dx = -10; dx <= 10; dx++) for (int dz = -10; dz <= 10; dz++) {
-            for (int y = HOME_Y + 1; y <= HOME_Y + 12; y++) level.setBlock(new BlockPos(x + dx, y, z + dz), Blocks.AIR.defaultBlockState(), 3);
-            level.setBlock(new BlockPos(x + dx, HOME_Y, z + dz), Blocks.GRASS_BLOCK.defaultBlockState(), 3);
+    private static void makeHomeLanding(ServerLevel level, int x, int z, long seed) {
+        Random random = new Random(seed);
+        // Initial home terrain is generated once. Returning to the home never clears player builds.
+        for (int dx = -24; dx <= 24; dx++) for (int dz = -24; dz <= 24; dz++) {
+            int height = 98 + (int)(Math.sin(dx * 0.18) * 2) + (int)(Math.cos(dz * 0.16) * 2);
+            for (int y = 88; y <= height; y++) {
+                BlockPos pos = new BlockPos(x + dx, y, z + dz);
+                level.setBlock(pos, y == height ? Blocks.GRASS_BLOCK.defaultBlockState() : Blocks.DIRT.defaultBlockState(), 3);
+            }
         }
-        level.setBlock(new BlockPos(x, HOME_Y + 1, z), Blocks.LANTERN.defaultBlockState(), 3);
-        level.setBlock(new BlockPos(x + 2, HOME_Y, z), Blocks.CHEST.defaultBlockState(), 3);
+        for (int i = 0; i < 16; i++) {
+            int tx = x + random.nextInt(43) - 21, tz = z + random.nextInt(43) - 21;
+            if (Math.abs(tx - x) < 5 && Math.abs(tz - z) < 5) continue;
+            int ground = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, tx, tz);
+            for (int h = 0; h < 4 + random.nextInt(3); h++)
+                level.setBlock(new BlockPos(tx, ground + h, tz), Blocks.OAK_LOG.defaultBlockState(), 3);
+            for (int ox = -2; ox <= 2; ox++) for (int oz = -2; oz <= 2; oz++) for (int oy = 3; oy <= 5; oy++) {
+                if (Math.abs(ox) + Math.abs(oz) + Math.abs(oy - 4) < 6)
+                    level.setBlock(new BlockPos(tx + ox, ground + oy, tz + oz), Blocks.OAK_LEAVES.defaultBlockState(), 3);
+            }
+        }
+        // A small pond, a lantern and a clear arrival pad.
+        for (int dx = -3; dx <= 3; dx++) for (int dz = -3; dz <= 3; dz++) {
+            if (dx * dx + dz * dz <= 10) {
+                level.setBlock(new BlockPos(x + dx, 98, z + dz), Blocks.WATER.defaultBlockState(), 3);
+                level.setBlock(new BlockPos(x + dx, 97, z + dz), Blocks.CLAY.defaultBlockState(), 3);
+            }
+        }
+        for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++)
+            level.setBlock(new BlockPos(x + dx, 100, z + dz), Blocks.GRASS_BLOCK.defaultBlockState(), 3);
+        level.setBlock(new BlockPos(x, 101, z), Blocks.LANTERN.defaultBlockState(), 3);
     }
 
-    /** Creates a bounded, freshly randomized maze. The home region is never included in this footprint. */
     private static void generateFreshMaze(ServerLevel level, int x, int z, long seed) {
         Random random = new Random(seed);
-        int half = (GRID * CELL_SIZE) / 2 + 2;
-        // Clear the complete maze volume, including the previous run's chests and decorations.
-        for (int dx = -half; dx <= half; dx++) for (int dz = -half; dz <= half; dz++)
-            for (int y = MAZE_FLOOR_Y; y <= MAZE_FLOOR_Y + 8; y++)
-                level.setBlock(new BlockPos(x + dx, y, z + dz), Blocks.AIR.defaultBlockState(), 3);
-
-        // Floor, ceiling, and perimeter make this a real enclosed structure rather than an open platform.
-        for (int dx = -half; dx <= half; dx++) for (int dz = -half; dz <= half; dz++) {
-            level.setBlock(new BlockPos(x + dx, MAZE_FLOOR_Y, z + dz), Blocks.DEEPSLATE_BRICKS.defaultBlockState(), 3);
-            level.setBlock(new BlockPos(x + dx, MAZE_FLOOR_Y + 8, z + dz), Blocks.DEEPSLATE_TILES.defaultBlockState(), 3);
-            if (Math.abs(dx) == half || Math.abs(dz) == half)
-                for (int y = 1; y <= 7; y++) level.setBlock(new BlockPos(x + dx, MAZE_FLOOR_Y + y, z + dz), Blocks.DEEPSLATE_BRICKS.defaultBlockState(), 3);
+        // The expedition footprint is reset; personal-home coordinates are kept far away.
+        for (int dx = -32; dx <= 32; dx++) for (int dz = -32; dz <= 32; dz++)
+            for (int y = 68; y <= 91; y++) level.setBlock(new BlockPos(x + dx, y, z + dz), Blocks.AIR.defaultBlockState(), 3);
+        for (int dx = -28; dx <= 28; dx++) for (int dz = -28; dz <= 28; dz++) {
+            level.setBlock(new BlockPos(x + dx, 78, z + dz), Blocks.DEEPSLATE_BRICKS.defaultBlockState(), 3);
+            level.setBlock(new BlockPos(x + dx, 86, z + dz), Blocks.DEEPSLATE_BRICKS.defaultBlockState(), 3);
         }
-
-        // Randomized cell maze built with depth-first traversal.
-        boolean[][] visited = new boolean[GRID][GRID];
-        boolean[][] eastWall = new boolean[GRID][GRID];
-        boolean[][] southWall = new boolean[GRID][GRID];
-        for (int gx = 0; gx < GRID; gx++) for (int gz = 0; gz < GRID; gz++) { eastWall[gx][gz] = true; southWall[gx][gz] = true; }
-        carve(0, 0, visited, eastWall, southWall, random);
-
-        for (int gx = 0; gx < GRID; gx++) for (int gz = 0; gz < GRID; gz++) {
-            int cx = x - ((GRID - 1) * CELL_SIZE) / 2 + gx * CELL_SIZE;
-            int cz = z - ((GRID - 1) * CELL_SIZE) / 2 + gz * CELL_SIZE;
-            // Cell dividers; openings are determined by the randomized traversal.
-            if (eastWall[gx][gz]) for (int t = -2; t <= 2; t++) for (int h = 1; h <= 5; h++)
-                level.setBlock(new BlockPos(cx + 3, MAZE_FLOOR_Y + h, cz + t), Blocks.DEEPSLATE_BRICKS.defaultBlockState(), 3);
-            if (southWall[gx][gz]) for (int t = -2; t <= 2; t++) for (int h = 1; h <= 5; h++)
-                level.setBlock(new BlockPos(cx + t, MAZE_FLOOR_Y + h, cz + 3), Blocks.DEEPSLATE_BRICKS.defaultBlockState(), 3);
-            if (random.nextInt(9) == 0) placeLootChest(level, new BlockPos(cx, MAZE_FLOOR_Y + 1, cz), random);
-            if (random.nextInt(7) == 0) level.setBlock(new BlockPos(cx + 1, MAZE_FLOOR_Y + 1, cz + 1), Blocks.SOUL_LANTERN.defaultBlockState(), 3);
+        // Grid rooms with randomized openings, dead ends and cross-links.
+        for (int gx = -24; gx <= 24; gx += 12) for (int gz = -24; gz <= 24; gz += 12) {
+            boolean rare = random.nextInt(12) == 0;
+            for (int h = 79; h <= 85; h++) for (int t = -5; t <= 5; t++) {
+                if (t != 0 || random.nextBoolean()) {
+                    level.setBlock(new BlockPos(x + gx + t, h, z + gz - 6), Blocks.DEEPSLATE_BRICKS.defaultBlockState(), 3);
+                    level.setBlock(new BlockPos(x + gx + t, h, z + gz + 6), Blocks.DEEPSLATE_BRICKS.defaultBlockState(), 3);
+                    level.setBlock(new BlockPos(x + gx - 6, h, z + gz + t), Blocks.DEEPSLATE_BRICKS.defaultBlockState(), 3);
+                    level.setBlock(new BlockPos(x + gx + 6, h, z + gz + t), Blocks.DEEPSLATE_BRICKS.defaultBlockState(), 3);
+                }
+            }
+            // Doorways are deliberately randomized so every run has a different route.
+            if (random.nextBoolean()) clearOpening(level, x + gx, z + gz - 6);
+            if (random.nextBoolean()) clearOpening(level, x + gx + 6, z + gz);
+            if (rare) {
+                BlockPos spawner = new BlockPos(x + gx, 79, z + gz);
+                level.setBlock(spawner, Blocks.CRYING_OBSIDIAN.defaultBlockState(), 3);
+                level.setBlock(spawner.above(), Blocks.SOUL_LANTERN.defaultBlockState(), 3);
+            }
+            if (random.nextInt(3) == 0) placeLoot(level, new BlockPos(x + gx + 2, 79, z + gz + 2), random);
+            if (random.nextInt(5) == 0) {
+                BlockPos trap = new BlockPos(x + gx - 2, 79, z + gz - 2);
+                level.setBlock(trap, Blocks.MAGMA_BLOCK.defaultBlockState(), 3);
+            }
         }
-
-        // Clear a safe entrance and mark the exit with a distinct light source.
-        for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++)
-            for (int y = 1; y <= 6; y++) level.setBlock(new BlockPos(x + dx, MAZE_FLOOR_Y + y, z + dz), Blocks.AIR.defaultBlockState(), 3);
-        level.setBlock(new BlockPos(x, MAZE_FLOOR_Y + 1, z), Blocks.SOUL_LANTERN.defaultBlockState(), 3);
-        placeLootChest(level, new BlockPos(x + half - 4, MAZE_FLOOR_Y + 1, z + half - 4), random);
+        // Entry chamber is always safe and recognizable.
+        for (int dx = -3; dx <= 3; dx++) for (int dz = -3; dz <= 3; dz++)
+            for (int y = 79; y <= 85; y++) level.setBlock(new BlockPos(x + dx, y, z + dz), Blocks.AIR.defaultBlockState(), 3);
+        level.setBlock(new BlockPos(x, 79, z), Blocks.POLISHED_DEEPSLATE.defaultBlockState(), 3);
+        level.setBlock(new BlockPos(x, 80, z), Blocks.SOUL_LANTERN.defaultBlockState(), 3);
+        placeLoot(level, new BlockPos(x + 18, 79, z + 18), random);
     }
 
-    private static void carve(int gx, int gz, boolean[][] visited, boolean[][] eastWall, boolean[][] southWall, Random random) {
-        visited[gx][gz] = true;
-        List<int[]> directions = new ArrayList<>();
-        directions.add(new int[]{1, 0}); directions.add(new int[]{-1, 0});
-        directions.add(new int[]{0, 1}); directions.add(new int[]{0, -1});
-        Collections.shuffle(directions, random);
-        for (int[] d : directions) {
-            int nx = gx + d[0], nz = gz + d[1];
-            if (nx < 0 || nz < 0 || nx >= GRID || nz >= GRID || visited[nx][nz]) continue;
-            if (d[0] == 1) eastWall[gx][gz] = false;
-            else if (d[0] == -1) eastWall[nx][nz] = false;
-            else if (d[1] == 1) southWall[gx][gz] = false;
-            else southWall[nx][nz] = false;
-            carve(nx, nz, visited, eastWall, southWall, random);
+    private static void clearOpening(ServerLevel level, int x, int z) {
+        for (int y = 80; y <= 83; y++) for (int offset = -1; offset <= 1; offset++) {
+            level.setBlock(new BlockPos(x + offset, y, z), Blocks.AIR.defaultBlockState(), 3);
+            level.setBlock(new BlockPos(x, y, z + offset), Blocks.AIR.defaultBlockState(), 3);
         }
     }
 
-    private static void placeLootChest(ServerLevel level, BlockPos pos, Random random) {
+    private static void placeLoot(ServerLevel level, BlockPos pos, Random random) {
         level.setBlock(pos, Blocks.CHEST.defaultBlockState(), 3);
         BlockEntity be = level.getBlockEntity(pos);
         if (be instanceof ChestBlockEntity chest) {
-            chest.setItem(10, new ItemStack(random.nextBoolean() ? Items.GOLD_INGOT : Items.IRON_INGOT, 2 + random.nextInt(6)));
-            chest.setItem(13, new ItemStack(random.nextBoolean() ? Items.EMERALD : Items.DIAMOND, 1 + random.nextInt(2)));
+            chest.setItem(10, new ItemStack(Items.GOLD_INGOT, 2 + random.nextInt(7)));
+            chest.setItem(13, new ItemStack(random.nextBoolean() ? Items.DIAMOND : Items.EMERALD, 1 + random.nextInt(3)));
             chest.setItem(16, new ItemStack(Items.GOLDEN_APPLE, 1 + random.nextInt(2)));
-            if (random.nextInt(12) == 0) chest.setItem(22, new ItemStack(Items.ENCHANTED_GOLDEN_APPLE));
+            if (random.nextInt(9) == 0) chest.setItem(22, new ItemStack(Items.ENCHANTED_GOLDEN_APPLE));
+            if (random.nextInt(6) == 0) chest.setItem(4, new ItemStack(Items.ENDER_PEARL, 2 + random.nextInt(4)));
             chest.setChanged();
         }
     }
+
 }
