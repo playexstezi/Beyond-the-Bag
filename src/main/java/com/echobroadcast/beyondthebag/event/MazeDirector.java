@@ -11,7 +11,7 @@ import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.MobSpawnType;
-import net.minecraft.world.entity.monster.Warden;
+import net.minecraft.world.entity.monster.warden.Warden;
 import net.minecraft.world.level.Level;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -69,12 +69,12 @@ public final class MazeDirector {
         Level world = player.level();
         switch (RANDOM.nextInt(level >= 3 ? 4 : 3)) {
             case 0 -> {
-                world.playSound(null, player.blockPosition(), SoundEvents.AMBIENT_CAVE, SoundSource.AMBIENT, 1.4F, 0.55F);
+                world.playSound(null, player.blockPosition(), SoundEvents.AMBIENT_CAVE.value(), SoundSource.AMBIENT, 1.4F, 0.55F);
                 player.sendSystemMessage(Component.literal("§8За стеной кто-то повторяет твои шаги..."));
             }
             case 1 -> {
                 player.addEffect(new MobEffectInstance(MobEffects.DARKNESS, 80 + level * 30, 0, false, false));
-                world.playSound(null, player.blockPosition(), SoundEvents.SCULK_SHRIEKER_SHRIEK, SoundSource.AMBIENT, 0.8F, 0.8F);
+                world.playSound(null, player.blockPosition(), SoundEvents.SCULK_SHRIEKER_SHRIEK.value(), SoundSource.AMBIENT, 0.8F, 0.8F);
                 player.sendSystemMessage(Component.literal("§5Пространство вокруг тебя мерцает."));
             }
             case 2 -> {
@@ -83,7 +83,7 @@ public final class MazeDirector {
             }
             default -> {
                 player.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 100, 0, false, false));
-                world.playSound(null, player.blockPosition(), SoundEvents.IRON_DOOR_CLOSE, SoundSource.BLOCKS, 1.0F, 0.7F);
+                world.playSound(null, player.blockPosition(), SoundEvents.IRON_DOOR_CLOSE.value(), SoundSource.BLOCKS, 1.0F, 0.7F);
                 player.sendSystemMessage(Component.literal("§4Коридор изменился, пока ты не смотрел."));
             }
         }
@@ -112,6 +112,6 @@ public final class MazeDirector {
         boss.finalizeSpawn(player.serverLevel(), player.serverLevel().getCurrentDifficultyAt(pos), MobSpawnType.EVENT, null, null);
         player.serverLevel().addFreshEntity(boss);
         player.sendSystemMessage(Component.literal("§4ЛАБИРИНТ ПРОСНУЛСЯ. ХРАНИТЕЛЬ ИДЁТ ЗА ТОБОЙ."));
-        player.serverLevel().playSound(null, pos, SoundEvents.WARDEN_ROAR, SoundSource.HOSTILE, 2.0F, 0.8F);
+        player.serverLevel().playSound(null, pos, SoundEvents.WARDEN_ROAR.value(), SoundSource.HOSTILE, 2.0F, 0.8F);
     }
 }
